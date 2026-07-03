@@ -1,12 +1,3 @@
-# Core (the synthetic demo runs on numpy alone)
-numpy>=1.24
-
-# Camera / video / display / image saving
-opencv-python>=4.8
-
-# Optional — only if you use --model yolo
-# ultralytics>=8.2
-
-# Optional — real reject actuator on Jetson / Raspberry Pi
-# Jetson.GPIO    # Jetson
-# RPi.GPIO       # Raspberry Pi
+fastapi
+uvicorn[standard]
+segno
