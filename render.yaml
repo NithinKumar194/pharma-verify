@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: pharma-qr-verify
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn serial_api:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PHARMA_DB
+        value: /var/data/pharma_serials.db
+    disk:
+      name: pharma-data
+      mountPath: /var/data
+      sizeGB: 1
