@@ -517,3 +517,92 @@ padding:11px 20px;border-radius:10px;font-size:14.5px}}
 <div class="foot">Share this page's link — anyone who can reach this server sees this same QR.</div>
 </div></body></html>"""
     return HTMLResponse(html)
+
+
+# ---------------------------------------------------------------- manufacturer dashboard
+# Served WITHOUT auth (it is just an empty shell); the page asks for the manufacturer key and
+# uses it for the data calls (/batches, /recall), which ARE gated. Open /admin in a browser.
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    return HTMLResponse("""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Manufacturer Dashboard</title>
+<style>
+body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
+.wrap{max-width:1000px;margin:0 auto;padding:24px}
+h1{font-size:20px;margin:0 0 4px} .sub{color:#94a3b8;font-size:13px;margin-bottom:18px}
+.key{display:flex;gap:8px;margin-bottom:18px}
+input{flex:1;padding:10px 12px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:14px}
+button{padding:10px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;cursor:pointer}
+button:hover{background:#1d4ed8} .danger{background:#dc2626} .danger:hover{background:#b91c1c}
+.cards{display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap}
+.card{background:#1e293b;border-radius:12px;padding:14px 18px;min-width:130px}
+.card .n{font-size:24px;font-weight:800} .card .l{color:#94a3b8;font-size:12px}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:12px;overflow:hidden}
+th,td{padding:10px 12px;text-align:left;font-size:13px;border-bottom:1px solid #334155}
+th{background:#0b1220;color:#94a3b8} tr:last-child td{border-bottom:0}
+.msg{color:#f87171;font-size:13px;margin:8px 0} .ok{color:#4ade80}
+.badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
+.b-active{background:#166534;color:#dcfce7} .b-void{background:#7f1d1d;color:#fee2e2}
+</style></head><body><div class="wrap">
+<h1>Manufacturer Dashboard</h1>
+<div class="sub">Enter your manufacturer key to view batches, scan counts, and issue recalls.</div>
+<div class="key">
+  <input id="k" type="password" placeholder="Manufacturer key (PHARMA_ADMIN_KEY)"
+         onkeydown="if(event.key==='Enter')load()">
+  <button onclick="load()">Load</button>
+</div>
+<div id="msg" class="msg"></div>
+<div class="cards" id="cards" style="display:none">
+  <div class="card"><div class="n" id="c-batches">0</div><div class="l">Batches</div></div>
+  <div class="card"><div class="n" id="c-packs">0</div><div class="l">Total packs</div></div>
+  <div class="card"><div class="n" id="c-scans">0</div><div class="l">Total scans</div></div>
+  <div class="card"><div class="n" id="c-void">0</div><div class="l">Voided (recalled)</div></div>
+</div>
+<table id="tbl" style="display:none"><thead><tr>
+<th>Product</th><th>Batch</th><th>Packs</th><th>Active</th><th>Scans</th><th>Mfg</th><th>Exp</th><th>Action</th>
+</tr></thead><tbody id="rows"></tbody></table>
+<script>
+let KEY="";
+async function load(){
+  KEY=document.getElementById('k').value.trim();
+  const msg=document.getElementById('msg'); msg.textContent="Loading...";
+  try{
+    const r=await fetch('/batches',{headers:{'X-API-Key':KEY}});
+    if(r.status===401){msg.textContent="Wrong key — access denied.";hideAll();return;}
+    if(!r.ok){msg.textContent="Error "+r.status;hideAll();return;}
+    const data=await r.json(); render(data.batches||[]); msg.textContent="";
+  }catch(e){msg.textContent="Could not reach server: "+e;}
+}
+function hideAll(){document.getElementById('cards').style.display='none';document.getElementById('tbl').style.display='none';}
+function render(batches){
+  let packs=0,scans=0,voided=0;
+  const rows=document.getElementById('rows'); rows.innerHTML="";
+  for(const b of batches){
+    packs+=b.packs||0; scans+=b.scans||0; voided+=b.voided||0;
+    const recalled=(b.voided||0)>0 && (b.voided===b.packs);
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${esc(b.product_name||'-')}</td>
+      <td>${esc(b.batch_no||'-')}<br><span style="color:#64748b;font-size:11px">${esc(b.batch_id||'')}</span></td>
+      <td>${b.packs||0}</td>
+      <td>${recalled?'<span class="badge b-void">RECALLED</span>':'<span class="badge b-active">'+(b.active||0)+'</span>'}</td>
+      <td>${b.scans||0}</td>
+      <td>${esc(b.mfg_date||'-')}</td><td>${esc(b.exp_date||'-')}</td>
+      <td>${recalled?'-':'<button class="danger" onclick="recall(\\''+b.batch_id+'\\')">Recall</button>'}</td>`;
+    rows.appendChild(tr);
+  }
+  document.getElementById('c-batches').textContent=batches.length;
+  document.getElementById('c-packs').textContent=packs;
+  document.getElementById('c-scans').textContent=scans;
+  document.getElementById('c-void').textContent=voided;
+  document.getElementById('cards').style.display='flex';
+  document.getElementById('tbl').style.display=batches.length?'table':'none';
+}
+async function recall(batchId){
+  if(!confirm('Recall (void) ALL packs in batch '+batchId+'? This cannot be undone.'))return;
+  const r=await fetch('/recall/'+encodeURIComponent(batchId),{method:'POST',headers:{'X-API-Key':KEY}});
+  if(r.ok){alert('Batch recalled. Packs are now VOID.');load();}
+  else alert('Recall failed: '+r.status);
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+</script>
+</div></body></html>""")
